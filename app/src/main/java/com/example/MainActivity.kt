@@ -54,13 +54,18 @@ enum class AppScreen(val label: String, val icon: ImageVector) {
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Configure Firebase App Check with launch intent before any UI or Firebase operations
+        com.example.util.configureAppCheck(this, intent)
+
         enableEdgeToEdge()
 
         val orchestrator = TripOrchestrator()
+        val geminiService = com.example.ai.GeminiTravelService()
 
         setContent {
             TripPilotTheme {
-                TripPilotApp(orchestrator = orchestrator)
+                TripPilotApp(orchestrator = orchestrator, geminiService = geminiService)
             }
         }
     }
@@ -68,7 +73,10 @@ class MainActivity : ComponentActivity() {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TripPilotApp(orchestrator: TripOrchestrator) {
+fun TripPilotApp(
+    orchestrator: TripOrchestrator,
+    geminiService: com.example.ai.GeminiTravelService = remember { com.example.ai.GeminiTravelService() }
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val credentialManager = remember { CredentialManager.create(context) }
@@ -372,6 +380,7 @@ fun TripPilotApp(orchestrator: TripOrchestrator) {
                     SmartPlannerScreen(
                         orchestrator = orchestrator,
                         scope = scope,
+                        geminiService = geminiService,
                         onOrchestrationStarted = {
                             navigateTo(AppScreen.AGENTS)
                         }
@@ -442,7 +451,7 @@ fun TripPilotApp(orchestrator: TripOrchestrator) {
                 }
 
                 AppScreen.SUPPORT -> {
-                    SupportScreen(orchestrator = orchestrator)
+                    SupportScreen(orchestrator = orchestrator, geminiService = geminiService)
                 }
 
                 AppScreen.PROFILE -> {

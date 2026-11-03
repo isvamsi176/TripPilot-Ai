@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -15,21 +16,39 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.agent.TripOrchestrator
+import com.example.ai.AiServiceResult
+import com.example.ai.GeminiTravelService
 import com.example.model.TravelDisruption
 import com.example.ui.components.SectionHeader
 import com.example.ui.theme.*
+import kotlinx.coroutines.launch
 
 @Composable
 fun SupportScreen(
     orchestrator: TripOrchestrator,
+    geminiService: GeminiTravelService,
     modifier: Modifier = Modifier
 ) {
     val disruptions by orchestrator.disruptions.collectAsState()
+    val scope = rememberCoroutineScope()
+
+    var userCustomQuestion by remember { mutableStateOf("") }
+    var aiAnswer by remember { mutableStateOf<String?>(null) }
+    var isAskingAi by remember { mutableStateOf(false) }
+
+    val quickQuestions = listOf(
+        "IndiGo baggage & cancellation policy",
+        "How to reach Candolim from Madgaon?",
+        "Best vegetarian food spots in Goa",
+        "IRCTC train delay refund rules"
+    )
 
     val faqs = listOf(
         Pair(
@@ -64,9 +83,150 @@ fun SupportScreen(
         item {
             SectionHeader(
                 title = "Travel Support & Live Disruption Center",
-                subtitle = "Agent 7 24/7 monitoring, real-time safety advisories & helplines",
+                subtitle = "Agent 7 24/7 monitoring, real-time safety advisories & Gemini AI assist",
                 badgeText = "Live Advisory"
             )
+        }
+
+        // Live Gemini Travel Assistant Card
+        item {
+            Surface(
+                color = NavyCard,
+                shape = RoundedCornerShape(16.dp),
+                border = androidx.compose.foundation.BorderStroke(1.5.dp, Brush.horizontalGradient(listOf(ElectricBlue, RoyalViolet))),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Surface(
+                                color = RoyalViolet.copy(alpha = 0.2f),
+                                shape = CircleShape,
+                                modifier = Modifier.size(32.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = VioletSoft, modifier = Modifier.size(18.dp))
+                                }
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text("Ask Gemini Travel Assistant", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = TextPrimary)
+                                Text("Powered by gemini-3.8-flash", fontSize = 10.sp, color = CyanAccent)
+                            }
+                        }
+
+                        Surface(
+                            color = EmeraldGreen.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text("AI ONLINE", fontSize = 9.sp, fontWeight = FontWeight.Bold, color = EmeraldLight, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = userCustomQuestion,
+                        onValueChange = { userCustomQuestion = it },
+                        placeholder = { Text("Ask about flights, IRCTC, local transport or food...", fontSize = 12.sp, color = TextMuted) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = CyanAccent,
+                            unfocusedBorderColor = BorderSubtle,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
+                        ),
+                        shape = RoundedCornerShape(10.dp),
+                        singleLine = false,
+                        maxLines = 3
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    // Quick question chips
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        items(quickQuestions) { q ->
+                            Surface(
+                                color = Navy850,
+                                shape = RoundedCornerShape(12.dp),
+                                border = androidx.compose.foundation.BorderStroke(1.dp, BorderSubtle),
+                                modifier = Modifier.clickable {
+                                    userCustomQuestion = q
+                                }
+                            ) {
+                                Text(
+                                    text = q,
+                                    fontSize = 10.sp,
+                                    color = TextSecondary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    Button(
+                        onClick = {
+                            if (userCustomQuestion.isNotBlank()) {
+                                isAskingAi = true
+                                scope.launch {
+                                    val res = geminiService.askTravelAssistant(userCustomQuestion)
+                                    isAskingAi = false
+                                    when (res) {
+                                        is AiServiceResult.Success -> aiAnswer = res.data
+                                        is AiServiceResult.Error -> aiAnswer = "Notice: ${res.message}"
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isAskingAi && userCustomQuestion.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = ElectricBlue),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isAskingAi) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = TextPrimary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Gemini 3.8 Flash is thinking...", fontSize = 12.sp)
+                        } else {
+                            Icon(Icons.Default.Send, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Get Instant AI Answer", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Display AI Answer
+                    if (aiAnswer != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            color = Navy850,
+                            shape = RoundedCornerShape(10.dp),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, CyanAccent.copy(alpha = 0.4f)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Column(modifier = Modifier.padding(12.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.SupportAgent, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("Gemini Travel Assistant Response:", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = CyanAccent)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                Text(
+                                    text = aiAnswer!!,
+                                    fontSize = 12.sp,
+                                    color = TextPrimary,
+                                    lineHeight = 17.sp
+                                )
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Emergency Helplines for India
@@ -184,7 +344,7 @@ fun SupportScreen(
 fun HelplinePill(
     label: String,
     number: String,
-    color: androidx.compose.ui.graphics.Color,
+    color: Color,
     modifier: Modifier = Modifier
 ) {
     Surface(

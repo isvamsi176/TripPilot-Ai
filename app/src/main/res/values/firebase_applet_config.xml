@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8" standalone="no"?>
 <resources>
     <string name="firestore_database_id" translatable="false">ai-studio-android-trippilo-1571a955-ca91-4acd-8833-7ca516f4b7a0</string>
+    <string name="recaptcha_site_key" translatable="false">6LcSFA4uAAAAAF5JuMgmeMK4b4WxwwT4zolFLHVj</string>
 </resources>

@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -22,6 +23,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.agent.TripOrchestrator
+import com.example.ai.AiServiceResult
+import com.example.ai.GeminiTravelService
 import com.example.model.TravelTier
 import com.example.model.TripRequest
 import com.example.ui.components.SectionHeader
@@ -29,12 +32,14 @@ import com.example.ui.components.TierChip
 import com.example.ui.components.TripFormatter
 import com.example.ui.theme.*
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SmartPlannerScreen(
     orchestrator: TripOrchestrator,
     scope: CoroutineScope,
+    geminiService: GeminiTravelService,
     onOrchestrationStarted: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -51,6 +56,10 @@ fun SmartPlannerScreen(
 
     val allPreferences = listOf("Beaches", "Sightseeing", "Adventure", "Nightlife", "Heritage", "Relaxation")
     var selectedPreferences by remember { mutableStateOf(listOf("Beaches", "Sightseeing", "Adventure")) }
+
+    var isAnalyzingWithGemini by remember { mutableStateOf(false) }
+    var geminiAiSummary by remember { mutableStateOf<String?>(null) }
+    var aiErrorMessage by remember { mutableStateOf<String?>(null) }
 
     val presetQueries = listOf(
         "Hyderabad to Goa • 5 Days • 2p • ₹25,000",
@@ -70,12 +79,12 @@ fun SmartPlannerScreen(
         item {
             SectionHeader(
                 title = "Conversational AI Trip Planner",
-                subtitle = "Agent 1 (Travel Planner) parses your intent & dispatches logistics engines",
-                badgeText = "Agent Orchestrated"
+                subtitle = "Agent 1 powered by Gemini 3.8 Flash parses your intent & coordinates logistics",
+                badgeText = "Gemini 3.8 Flash"
             )
         }
 
-        // Natural Language Prompt Card
+        // Natural Language Prompt Card with Gemini Parsing
         item {
             Surface(
                 color = NavyCard,
@@ -84,15 +93,34 @@ fun SmartPlannerScreen(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Psychology, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text(
-                            text = "Natural Language Trip Prompt",
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = TextPrimary
-                        )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Psychology, contentDescription = null, tint = CyanAccent, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Natural Language Trip Prompt",
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = TextPrimary
+                            )
+                        }
+
+                        Surface(
+                            color = RoyalViolet.copy(alpha = 0.2f),
+                            shape = RoundedCornerShape(6.dp)
+                        ) {
+                            Text(
+                                text = "AI INTENT PARSER",
+                                color = VioletSoft,
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
 
                     Spacer(modifier = Modifier.height(10.dp))
@@ -116,7 +144,92 @@ fun SmartPlannerScreen(
                         maxLines = 4
                     )
 
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
+
+                    // Gemini Parse Action Button
+                    Button(
+                        onClick = {
+                            isAnalyzingWithGemini = true
+                            aiErrorMessage = null
+                            scope.launch {
+                                val result = geminiService.parseNaturalLanguageTrip(naturalLanguageInput)
+                                isAnalyzingWithGemini = false
+                                when (result) {
+                                    is AiServiceResult.Success -> {
+                                        val p = result.data
+                                        origin = p.origin
+                                        destination = p.destination
+                                        days = p.days
+                                        travellers = p.travellers
+                                        budgetInr = p.budgetInr
+                                        if (p.preferences.isNotEmpty()) {
+                                            selectedPreferences = p.preferences
+                                        }
+                                        geminiAiSummary = p.aiSummary
+                                    }
+                                    is AiServiceResult.Error -> {
+                                        aiErrorMessage = result.message
+                                    }
+                                }
+                            }
+                        },
+                        enabled = !isAnalyzingWithGemini,
+                        colors = ButtonDefaults.buttonColors(containerColor = RoyalViolet),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        if (isAnalyzingWithGemini) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = TextPrimary)
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("Analyzing with Gemini 3.8 Flash...", fontSize = 12.sp)
+                        } else {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Parse & Optimize with Gemini AI", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    // Display AI Summary or Error
+                    if (geminiAiSummary != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            color = EmeraldGreen.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = EmeraldLight, modifier = Modifier.size(16.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text(
+                                    text = geminiAiSummary!!,
+                                    fontSize = 11.sp,
+                                    color = EmeraldLight,
+                                    lineHeight = 15.sp
+                                )
+                            }
+                        }
+                    }
+
+                    if (aiErrorMessage != null) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Surface(
+                            color = CrimsonAlert.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                text = "Notice: $aiErrorMessage",
+                                fontSize = 11.sp,
+                                color = CrimsonAlert,
+                                modifier = Modifier.padding(8.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(10.dp))
 
                     Text(
                         text = "Quick Presets:",
