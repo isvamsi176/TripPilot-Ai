@@ -1,0 +1,89 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isValidTimestamp(val) {
+      return val is timestamp && val <= request.time;
+    }
+
+    function isValidUser(data) {
+      return data.email is string &&
+             data.email.size() > 3 &&
+             data.displayName is string &&
+             (!('linkedIrctc' in data) || data.linkedIrctc is string) &&
+             (!('frequentFlyer' in data) || data.frequentFlyer is string) &&
+             (!('miles' in data) || (data.miles is number && data.miles >= 0)) &&
+             (!('preferredTier' in data) || data.preferredTier in ['ECONOMY', 'BALANCED', 'PREMIUM_LUXURY']) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidTrip(data) {
+      return data.origin is string &&
+             data.origin.size() > 0 &&
+             data.destination is string &&
+             data.destination.size() > 0 &&
+             data.days is number && data.days > 0 &&
+             data.travellers is number && data.travellers > 0 &&
+             data.budgetInr is number && data.budgetInr >= 0 &&
+             data.tier is string &&
+             data.totalCostInr is number && data.totalCostInr >= 0 &&
+             (!('preferences' in data) || data.preferences is list) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidBooking(data) {
+      return data.pnr is string &&
+             data.pnr.size() > 0 &&
+             data.title is string &&
+             data.title.size() > 0 &&
+             data.type is string &&
+             data.routeOrLocation is string &&
+             data.travelDate is string &&
+             (!('travellersText' in data) || data.travellersText is string) &&
+             data.totalAmountInr is number && data.totalAmountInr >= 0 &&
+             data.status in ['CONFIRMED', 'PENDING', 'CANCELLED'] &&
+             data.seatOrRoomNumber is string &&
+             (!('qrPayload' in data) || data.qrPayload is string) &&
+             isValidTimestamp(data.createdAt) &&
+             isValidTimestamp(data.updatedAt);
+    }
+
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && isValidUser(request.resource.data);
+      allow update: if isOwner(userId) &&
+                       isValidUser(request.resource.data) &&
+                       request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+
+      match /trips/{tripId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidTrip(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         isValidTrip(request.resource.data) &&
+                         request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId);
+      }
+
+      match /bookings/{bookingId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId) && isValidBooking(request.resource.data);
+        allow update: if isOwner(userId) &&
+                         isValidBooking(request.resource.data) &&
+                         request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if isOwner(userId);
+      }
+    }
+  }
+}

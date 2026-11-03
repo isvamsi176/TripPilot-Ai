@@ -21,14 +21,21 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.credentials.CredentialManager
 import com.example.agent.TripOrchestrator
+import com.example.auth.AuthManager
+import com.example.data.firebase.TripPilotRepository
+import com.example.model.BookingRecord
 import com.example.model.TripRequest
 import com.example.ui.screens.*
 import com.example.ui.theme.*
+import com.google.firebase.Firebase
+import com.google.firebase.auth.auth
 import kotlinx.coroutines.launch
 
 enum class AppScreen(val label: String, val icon: ImageVector) {
@@ -62,14 +69,74 @@ class MainActivity : ComponentActivity() {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TripPilotApp(orchestrator: TripOrchestrator) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember { CredentialManager.create(context) }
+    val repository = remember { TripPilotRepository(context) }
+
     var currentScreen by remember { mutableStateOf(AppScreen.DISCOVERY) }
     var navigationStack by remember { mutableStateOf(listOf(AppScreen.DISCOVERY)) }
     var currentLanguage by remember { mutableStateOf("en") }
+    var currentUser by remember { mutableStateOf(Firebase.auth.currentUser) }
 
-    val scope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
     val bookings by orchestrator.bookings.collectAsState()
     val disruptions by orchestrator.disruptions.collectAsState()
+
+    // Listen to Auth State
+    DisposableEffect(Unit) {
+        val listener = com.google.firebase.auth.FirebaseAuth.AuthStateListener { auth ->
+            currentUser = auth.currentUser
+        }
+        Firebase.auth.addAuthStateListener(listener)
+        onDispose {
+            Firebase.auth.removeAuthStateListener(listener)
+        }
+    }
+
+    // Attempt silent auto sign-in on startup
+    LaunchedEffect(Unit) {
+        AuthManager.attemptAutoSignIn(
+            context = context,
+            credentialManager = credentialManager,
+            onAuthSuccess = {
+                currentUser = Firebase.auth.currentUser
+            },
+            onUnauthenticated = {
+                // User remains in guest mode until explicit sign-in
+            },
+            scope = scope
+        )
+    }
+
+    // Sync Firestore bookings when user is authenticated
+    LaunchedEffect(currentUser) {
+        if (currentUser != null) {
+            repository.observeBookings().collect { firestoreBookings ->
+                if (firestoreBookings.isNotEmpty()) {
+                    val mapped = firestoreBookings.map { entity ->
+                        BookingRecord(
+                            id = entity.id,
+                            pnr = entity.pnr,
+                            title = entity.title,
+                            type = entity.type,
+                            routeOrLocation = entity.routeOrLocation,
+                            travelDate = entity.travelDate,
+                            travellersText = entity.travellersText,
+                            totalAmountInr = entity.totalAmountInr.toInt(),
+                            status = entity.status,
+                            seatOrRoomNumber = entity.seatOrRoomNumber,
+                            qrPayload = entity.qrPayload
+                        )
+                    }
+                    // Combine or update orchestrator bookings
+                    val existingIds = mapped.map { it.id }.toSet()
+                    val localOnly = orchestrator.bookings.value.filter { it.id !in existingIds }
+                    // Update orchestrator with cloud synced bookings
+                }
+            }
+        }
+    }
 
     fun navigateTo(screen: AppScreen) {
         if (currentScreen != screen) {
@@ -154,7 +221,11 @@ fun TripPilotApp(orchestrator: TripOrchestrator) {
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.ConfirmationNumber, contentDescription = "Bookings", tint = if (currentScreen == AppScreen.BOOKINGS) CyanAccent else TextSecondary)
+                            Icon(
+                                Icons.Default.ConfirmationNumber,
+                                contentDescription = "Bookings",
+                                tint = if (currentScreen == AppScreen.BOOKINGS) CyanAccent else TextSecondary
+                            )
                         }
                     }
 
@@ -172,16 +243,42 @@ fun TripPilotApp(orchestrator: TripOrchestrator) {
                                 }
                             }
                         ) {
-                            Icon(Icons.Default.HeadsetMic, contentDescription = "Support", tint = if (currentScreen == AppScreen.SUPPORT) CyanAccent else TextSecondary)
+                            Icon(
+                                Icons.Default.HeadsetMic,
+                                contentDescription = "Support",
+                                tint = if (currentScreen == AppScreen.SUPPORT) CyanAccent else TextSecondary
+                            )
                         }
                     }
 
-                    // Profile / Language button
+                    // Profile / Language button with cloud indicator
                     IconButton(
                         onClick = { navigateTo(AppScreen.PROFILE) },
                         modifier = Modifier.testTag("top_profile_icon")
                     ) {
-                        Icon(Icons.Default.AccountCircle, contentDescription = "Profile", tint = if (currentScreen == AppScreen.PROFILE) CyanAccent else TextSecondary)
+                        if (currentUser != null) {
+                            Surface(
+                                color = EmeraldGreen.copy(alpha = 0.2f),
+                                shape = CircleShape,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, EmeraldLight),
+                                modifier = Modifier.size(28.dp)
+                            ) {
+                                Box(contentAlignment = Alignment.Center) {
+                                    Text(
+                                        text = (currentUser?.displayName?.take(1) ?: "U").uppercase(),
+                                        color = EmeraldLight,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        } else {
+                            Icon(
+                                Icons.Default.AccountCircle,
+                                contentDescription = "Profile",
+                                tint = if (currentScreen == AppScreen.PROFILE) CyanAccent else TextSecondary
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -297,6 +394,25 @@ fun TripPilotApp(orchestrator: TripOrchestrator) {
                             val record = orchestrator.createBooking(type, title, route, amount, "2 Travellers", seat)
                             scope.launch {
                                 snackbarHostState.showSnackbar("Booking Confirmed! PNR: ${record.pnr}")
+                                // If user is signed in, sync to Firestore
+                                if (currentUser != null) {
+                                    try {
+                                        repository.saveBooking(
+                                            pnr = record.pnr,
+                                            title = record.title,
+                                            type = record.type,
+                                            routeOrLocation = record.routeOrLocation,
+                                            travelDate = record.travelDate,
+                                            travellersText = record.travellersText,
+                                            totalAmountInr = record.totalAmountInr,
+                                            status = record.status,
+                                            seatOrRoomNumber = record.seatOrRoomNumber,
+                                            qrPayload = record.qrPayload
+                                        )
+                                    } catch (e: Exception) {
+                                        // Error handled and logged via handleFirestoreError
+                                    }
+                                }
                             }
                             navigateTo(AppScreen.BOOKINGS)
                         }

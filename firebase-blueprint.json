@@ -1,0 +1,76 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with rewards, IRCTC credentials, and travel preferences",
+      "type": "object",
+      "properties": {
+        "displayName": { "type": "string", "description": "Full name of the user" },
+        "email": { "type": "string", "description": "Email address" },
+        "linkedIrctc": { "type": "string", "description": "Linked IRCTC username" },
+        "frequentFlyer": { "type": "string", "description": "Airline frequent flyer number" },
+        "miles": { "type": "number", "description": "Accumulated TripPilot travel miles" },
+        "preferredTier": { "type": "string", "description": "Preferred travel tier: ECONOMY, BALANCED, PREMIUM_LUXURY" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of creation" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update" }
+      },
+      "required": ["email", "displayName", "createdAt", "updatedAt"]
+    },
+    "Trip": {
+      "title": "Trip Plan",
+      "description": "User saved trip planned via TripPilot AI",
+      "type": "object",
+      "properties": {
+        "origin": { "type": "string", "description": "Source city" },
+        "destination": { "type": "string", "description": "Destination city" },
+        "days": { "type": "number", "description": "Duration in days" },
+        "travellers": { "type": "number", "description": "Number of travellers" },
+        "budgetInr": { "type": "number", "description": "Target budget in INR" },
+        "tier": { "type": "string", "description": "Selected travel tier" },
+        "totalCostInr": { "type": "number", "description": "Estimated total cost in INR" },
+        "preferences": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Selected travel interests and vibes"
+        },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["origin", "destination", "days", "travellers", "budgetInr", "tier", "totalCostInr", "createdAt", "updatedAt"]
+    },
+    "Booking": {
+      "title": "Booking Record",
+      "description": "Simulated or confirmed flight, train, bus, or hotel reservation",
+      "type": "object",
+      "properties": {
+        "pnr": { "type": "string", "description": "Unique booking reference / PNR" },
+        "title": { "type": "string", "description": "Title of the booked service" },
+        "type": { "type": "string", "description": "Transport or stay type (Flight, Train, Bus, Hotel)" },
+        "routeOrLocation": { "type": "string", "description": "Origin to destination or hotel location" },
+        "travelDate": { "type": "string", "description": "Date of journey or stay" },
+        "travellersText": { "type": "string", "description": "Passenger or guest details" },
+        "totalAmountInr": { "type": "number", "description": "Total amount paid in INR" },
+        "status": { "type": "string", "description": "CONFIRMED, PENDING, or CANCELLED" },
+        "seatOrRoomNumber": { "type": "string", "description": "Allocated seat, berth, or room" },
+        "qrPayload": { "type": "string", "description": "Encrypted digital pass barcode payload" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Creation timestamp" },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Update timestamp" }
+      },
+      "required": ["pnr", "title", "type", "routeOrLocation", "travelDate", "totalAmountInr", "status", "seatOrRoomNumber", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Root user profile document"
+    },
+    "/users/{userId}/trips/{tripId}": {
+      "schema": { "$ref": "#/entities/Trip" },
+      "description": "Subcollection of saved trips created by the user"
+    },
+    "/users/{userId}/bookings/{bookingId}": {
+      "schema": { "$ref": "#/entities/Booking" },
+      "description": "Subcollection of user reservations and tickets"
+    }
+  }
+}
