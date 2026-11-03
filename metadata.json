@@ -2,5 +2,7 @@
   "name": "TripPilot AI",
   "description": "Plan Smarter. Travel Better. Experience More. AI-powered multi-agent travel platform for flights, trains, buses, hotels and dynamic budget optimization.",
   "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
 }
